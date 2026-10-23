@@ -1,0 +1,6 @@
+# 本仓库是纯前端项目，没有构建步骤；只忽略本地环境与临时产物
+.workbuddy/
+node_modules/
+*.log
+.DS_Store
+Thumbs.db

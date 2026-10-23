@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>LabMark · 实验视频标注助手</title>
+<meta name="description" content="LabMark —— 基于保利威点播播放器 SDK 的实验视频复盘工具：时间戳打点、笔记绑定、重点区间标记。" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%232c6ef5'/%3E%3Cpath d='M8 23.5h16' stroke='%23fff' stroke-opacity='.45' stroke-width='1.6' stroke-linecap='round'/%3E%3Cpath d='M13.5 23.5V9.5h7.2l-1.9 3 1.9 3h-7.2' fill='%23fff'/%3E%3C/svg%3E" />
+<link rel="stylesheet" href="assets/css/style.css" />
+</head>
+<body>
+
+<!-- ============ 顶部信息栏 ============ -->
+<header class="app-header">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 36 36" width="34" height="34">
+        <defs>
+          <linearGradient id="brandGrad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#4d84f9" />
+            <stop offset="100%" stop-color="#2c6ef5" />
+          </linearGradient>
+        </defs>
+        <rect x="0" y="0" width="36" height="36" rx="10" fill="url(#brandGrad)" />
+        <path d="M9 26.6h18" stroke="#ffffff" stroke-opacity=".42" stroke-width="1.7" stroke-linecap="round" />
+        <path d="M15.6 26.6V10.4h8.3l-2.1 3.4 2.1 3.4h-8.3" fill="#ffffff" fill-opacity=".97" />
+        <circle cx="26.2" cy="26.6" r="1.5" fill="#ffffff" fill-opacity=".62" />
+      </svg>
+    </span>
+    <div class="brand-text">
+      <h1>LabMark<span class="dot-cyan">.</span></h1>
+      <p>实验视频标注助手 · 把长视频变成可跳转的复盘笔记</p>
+    </div>
+  </div>
+
+  <div class="header-mid">
+    <span class="badge" id="modeBadge"><i class="badge-dot"></i><span id="modeText">播放器初始化中…</span></span>
+    <!-- 当前视频：点开是「视频库」，可在多个保利威视频之间切换（数据各自独立） -->
+    <button class="chip chip-btn" id="vidBadge" title="打开视频库，切换到其他保利威视频">
+      <span id="vidBadgeText">VID：未配置</span>
+      <svg class="chip-caret" viewBox="0 0 12 12" width="9" height="9" aria-hidden="true">
+        <path d="M3 4.6L6 7.6l3-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+  </div>
+
+  <div class="header-right">
+    <span class="author">保利威校园黑客松 · Andrea</span>
+    <button class="btn ghost sm" id="btnLibrary" title="视频库：在多个保利威视频之间切换">
+      <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
+        <rect x="3" y="5" width="13" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/>
+        <path d="M18.6 8.4l2.4-1.4v10l-2.4-1.4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+      </svg>
+      视频库
+    </button>
+    <!-- 导出：Word / PDF / Markdown 三份「能交上去」的文档 + JSON 备份 -->
+    <div class="export-group">
+      <button class="btn ghost sm" id="btnExport" title="导出实验文档：Word / PDF / Markdown">
+        导出
+        <svg class="caret-down" viewBox="0 0 12 12" width="9" height="9" aria-hidden="true">
+          <path d="M3 4.6L6 7.6l3-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+      <div class="menu is-hidden" id="exportMenu">
+        <p class="menu-head">导出实验文档</p>
+        <button class="menu-item" data-act="word">Word 文档<em>.doc · 含关键帧截图</em></button>
+        <button class="menu-item" data-act="pdf">PDF 文档<em>走浏览器打印</em></button>
+        <button class="menu-item" data-act="md">Markdown<em>.md · 纯文本</em></button>
+        <div class="menu-sep"></div>
+        <button class="menu-item" data-act="json">JSON 备份<em>可再导入</em></button>
+        <button class="menu-item" data-act="import">导入 JSON</button>
+      </div>
+    </div>
+    <input type="file" id="fileImport" accept="application/json,.json" hidden />
+  </div>
+</header>
+
+<!-- ============ 主体：三栏结构 ============ -->
+<main class="app-main">
+  <!-- 左：播放器 + 时间轴 -->
+  <section class="stage">
+
+    <div class="card player-card">
+      <!-- 播放器容器：保利威 SDK 与演示模式共用同一块区域 -->
+      <div class="player-frame" id="playerFrame">
+        <div class="player-mount" id="polyvWrap"></div>
+        <div class="player-mount is-hidden" id="demoWrap">
+          <video id="demoVideo" playsinline preload="auto"></video>
+        </div>
+      </div>
+
+      <!-- 提示条：演示模式说明 / 播放异常提示（带一键诊断） -->
+      <div class="player-notice is-hidden" id="playerNotice">
+        <span class="notice-ico" aria-hidden="true">!</span>
+        <span id="noticeText"></span>
+        <span class="notice-acts">
+          <button class="btn ghost sm is-hidden" id="noticeRetry" title="重建播放器并重新获取播放凭证">重试播放</button>
+          <button class="btn ghost sm is-hidden" id="noticeDiag" title="检查视频凭证接口是否可达">运行诊断</button>
+          <button class="btn ghost sm is-hidden" id="noticeAction" title="切换到公开示例视频，标注功能照常可用">切换示例视频</button>
+        </span>
+      </div>
+
+      <!-- 控制条：左 = 传输控制 / 中 = 打点操作 / 右 = 快捷键提示 -->
+      <div class="player-bar">
+        <div class="transport">
+          <button class="icon-btn" id="btnPlay" aria-label="播放 / 暂停">
+            <svg class="ico-play" viewBox="0 0 24 24" width="18" height="18"><path d="M8 5.5v13l11-6.5z" fill="currentColor"/></svg>
+            <svg class="ico-pause is-hidden" viewBox="0 0 24 24" width="18" height="18"><path d="M8 5h3.2v14H8zM12.8 5H16v14h-3.2z" fill="currentColor"/></svg>
+          </button>
+          <button class="icon-btn snug" id="btnBack" aria-label="后退 5 秒">−5s</button>
+          <button class="icon-btn snug" id="btnFwd" aria-label="前进 5 秒">+5s</button>
+          <div class="timecode">
+            <b id="tCur">00:00</b><i>/</i><span id="tDur">--:--</span>
+          </div>
+        </div>
+
+        <div class="actions">
+          <div class="act-group">
+            <button class="btn" id="btnMark">
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+              添加标记
+              <kbd>M</kbd>
+            </button>
+
+            <!-- 语音打点：webkitSpeechRecognition 收音 → AI 整理成规范笔记 -->
+            <button class="btn voice" id="btnVoice" title="语音打点：说一句现场描述，自动生成规范笔记">
+              <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+                <path d="M12 3.4a3 3 0 013 3v5.1a3 3 0 01-6 0V6.4a3 3 0 013-3z" fill="currentColor"/>
+                <path d="M6.9 11.3v.7a5.1 5.1 0 0010.2 0v-.7M12 17.5v3.1M9.5 20.6h5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" fill="none"/>
+              </svg>
+              <span class="voice-label">语音打点</span>
+            </button>
+
+            <!-- AI 识帧：截取当前画面 → 生成【操作描述】/【易错提醒】 -->
+            <div class="ai-group">
+              <button class="btn ai" id="btnAI" title="截取当前画面，AI 生成打点笔记">
+                <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+                  <path d="M12 3.2l1.9 4.6 4.9 1.9-4.9 1.9L12 16.2l-1.9-4.6L5.2 9.7l4.9-1.9z" fill="currentColor"/>
+                  <path d="M18.4 15.2l.9 2.1 2.2.9-2.2.9-.9 2.1-.9-2.1-2.2-.9 2.2-.9z" fill="currentColor" opacity=".7"/>
+                </svg>
+                AI 识帧
+              </button>
+              <button class="btn ai caret" id="btnAIMenu" aria-label="更多 AI 操作">▾</button>
+              <div class="menu is-hidden" id="aiMenu">
+                <button class="menu-item" data-act="frame">截取当前画面识别</button>
+                <button class="menu-item" data-act="upload">上传截图识别</button>
+                <div class="menu-sep"></div>
+                <button class="menu-item" data-act="subtitle">生成 AI 字幕 <em>按画面内容分段</em></button>
+                <div class="menu-sep"></div>
+                <button class="menu-item" data-act="settings">AI 设置…</button>
+              </div>
+            </div>
+            <input type="file" id="aiFile" accept="image/*" hidden />
+          </div>
+
+          <span class="act-sep" aria-hidden="true"></span>
+
+          <div class="act-group">
+            <button class="btn" id="btnRangeStart">区间起点 <kbd>I</kbd></button>
+            <button class="btn" id="btnRangeEnd">区间终点 <kbd>O</kbd></button>
+          </div>
+        </div>
+
+        <span class="bar-hint">空格 播放 · M 打点 · L 循环</span>
+      </div>
+
+      <!-- 循环播放控制行：常驻，未开启时是一个明确的入口 -->
+      <div class="loop-bar is-off" id="loopBar">
+        <button class="loop-switch" id="btnLoopToggle" aria-pressed="false" title="循环当前高亮的重点区间（快捷键 L）">
+          <span class="ls-ico" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 9.2A4.2 4.2 0 018.2 5h9.6"/><path d="M15.4 2.6L18.2 5l-2.8 2.4"/>
+              <path d="M20 14.8A4.2 4.2 0 0115.8 19H6.2"/><path d="M8.6 21.4L5.8 19l2.8-2.4"/>
+            </svg>
+          </span>
+          <span class="ls-text">循环</span>
+        </button>
+        <span class="loop-range" id="loopRange">--:-- → --:--</span>
+        <span class="loop-prog" id="loopProg">未开启</span>
+        <span class="loop-note" id="loopNote">在区间列表开启循环，或按 L 循环当前区间</span>
+        <div class="rate-seg" id="rateSeg" role="group" aria-label="循环倍速">
+          <button class="rate-btn" data-rate="0.5">0.5x</button>
+          <button class="rate-btn" data-rate="0.75">0.75x</button>
+          <button class="rate-btn" data-rate="1">1x</button>
+        </div>
+        <button class="link is-hidden" id="btnLoopExit">退出循环</button>
+      </div>
+
+      <!-- 语音打点状态条：实时显示识别到的口语；识别服务不可用时可直接手写补充 -->
+      <div class="voice-bar is-hidden" id="voiceBar">
+        <span class="voice-tag" id="voiceTag"><i class="rec-dot"></i>聆听中</span>
+        <span class="voice-text" id="voiceText">正在聆听，说一句现场操作描述…</span>
+        <input class="input voice-input is-hidden" id="voiceInput" type="text" maxlength="120"
+          placeholder="直接输入一句话，回车即打点" autocomplete="off" />
+        <button class="btn ghost sm" id="btnVoiceType" title="不用麦克风，直接打字生成一条语音笔记">手动输入</button>
+        <button class="btn ghost sm is-hidden" id="btnVoiceRetry">重试</button>
+        <button class="btn ghost sm" id="btnVoiceStop">结束录音</button>
+      </div>
+
+      <!-- 区间草稿条 -->
+      <div class="draft-bar is-hidden" id="draftBar">
+        <span class="draft-tag">区间起草中</span>
+        <button class="time-chip" id="draftJump">起点 00:00</button>
+        <span class="draft-hint">播放到区间结束的位置，点击「区间终点」即可生成重点区间</span>
+        <button class="link" id="btnDraftCancel">取消</button>
+      </div>
+    </div>
+
+    <!-- 时间轴 -->
+    <div class="card timeline-card">
+      <div class="card-head">
+        <h2>时间轴</h2>
+        <div class="legend">
+          <span class="lg"><i class="lg-dot mk"></i>标记</span>
+          <span class="lg"><i class="lg-dot rg"></i>重点区间</span>
+          <span class="lg"><i class="lg-dot lp"></i>循环中</span>
+        </div>
+        <span class="head-hint">点击轨道跳转 · 按住可拖动擦拭</span>
+      </div>
+      <div class="timeline" id="timeline">
+        <div class="tl-track" id="tlTrack">
+          <div class="tl-ranges" id="tlRanges"></div>
+          <div class="tl-markers" id="tlMarkers"></div>
+          <div class="tl-playhead" id="tlPlayhead"><span class="ph-cap"></span></div>
+        </div>
+        <!-- AI 字幕轨：按画面内容分段生成，点击可跳转 -->
+        <div class="tl-subs is-hidden" id="tlSubs"></div>
+        <div class="tl-ticks" id="tlTicks"></div>
+        <div class="tl-empty" id="tlEmpty">还没有任何标记 —— 播放到关键步骤时，点击「添加标记」<kbd>M</kbd></div>
+        <div class="tl-tip is-hidden" id="tlTip"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 右：笔记面板 -->
+  <aside class="side">
+    <div class="card notes-card">
+      <div class="card-head">
+        <h2>笔记面板</h2>
+        <button class="btn ai sm" id="btnReport" title="根据全部打点记录生成结构化复盘报告">
+          <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><path d="M12 3.2l1.9 4.6 4.9 1.9-4.9 1.9L12 16.2l-1.9-4.6L5.2 9.7l4.9-1.9z" fill="currentColor"/></svg>
+          复盘报告
+        </button>
+        <button class="link danger" id="btnClearAll">清空全部</button>
+      </div>
+
+      <!-- 实验报告初稿：6 章结构，可直接交给老师 -->
+      <div class="report-cta">
+        <button class="btn primary block" id="btnReportDraft" title="按「实验目的 / 器材 / 步骤 / 注意事项 / 数据记录 / 思考题」生成报告初稿">
+          <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+            <path d="M7 3.5h7.6L19 7.9v12.6H7z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+            <path d="M14.2 3.6v4.5h4.6M9.6 12.4h6.4M9.6 15.6h6.4M9.6 18.2h3.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+          </svg>
+          生成实验报告初稿
+        </button>
+        <p class="cta-note">Demo 演示 · 正式上线需后端中转保护密钥</p>
+      </div>
+
+      <div class="panel-tools">
+        <div class="tabs" role="tablist">
+          <button class="tab is-active" data-tab="notes" role="tab">标记笔记 <em id="cntNotes">0</em></button>
+          <button class="tab" data-tab="ranges" role="tab">重点区间 <em id="cntRanges">0</em></button>
+          <button class="tab" data-tab="subs" role="tab">AI 字幕 <em id="cntSubs">0</em></button>
+        </div>
+        <input class="search" id="search" type="search" placeholder="搜索笔记内容或时间…" autocomplete="off" />
+      </div>
+
+      <div class="panel-body">
+        <ul class="note-list" id="noteList"></ul>
+        <ul class="range-list is-hidden" id="rangeList"></ul>
+        <ul class="sub-list is-hidden" id="subList"></ul>
+      </div>
+
+      <div class="panel-foot">
+        <span class="save-state" id="saveState">数据保存在本机浏览器</span>
+        <span class="foot-hint">V 语音 · L 循环 · 空格 播放</span>
+      </div>
+    </div>
+  </aside>
+</main>
+
+<div class="toast-wrap" id="toastWrap" aria-live="polite"></div>
+
+<!-- ============ 复盘报告弹层（模式 B 输出） ============ -->
+<div class="modal-mask is-hidden" id="reportMask">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="reportTitle">
+    <header class="modal-head">
+      <div class="modal-head-text">
+        <h3 id="reportTitle">实验复盘报告</h3>
+        <p class="modal-sub" id="reportMeta">按全部打点记录生成</p>
+      </div>
+      <button class="icon-btn" id="btnReportClose" aria-label="关闭">✕</button>
+    </header>
+    <div class="modal-body" id="reportBody"></div>
+    <footer class="modal-foot">
+      <span class="modal-hint" id="reportHint">由 AI 依据你的打点记录生成，请结合实验记录核对</span>
+      <div class="modal-actions">
+        <button class="btn ghost sm" id="btnReportCopy">复制</button>
+        <button class="btn ghost sm" id="btnReportDownload">下载 .md</button>
+        <button class="btn sm" id="btnReportRetry">重新生成</button>
+      </div>
+    </footer>
+  </div>
+</div>
+
+<!-- ============ 实验报告初稿弹层（Markdown 排版） ============ -->
+<div class="modal-mask is-hidden" id="draftMask">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="draftTitle">
+    <header class="modal-head">
+      <div class="modal-head-text">
+        <h3 id="draftTitle">实验报告初稿</h3>
+        <p class="modal-sub" id="draftMeta">依据全部打点记录生成</p>
+      </div>
+      <button class="icon-btn" id="btnDraftClose" aria-label="关闭">✕</button>
+    </header>
+    <div class="modal-body md" id="draftBody"></div>
+    <footer class="modal-foot">
+      <span class="modal-hint">含正文 + 关键帧附录 + 打点清单 · PDF 走浏览器打印</span>
+      <div class="modal-actions">
+        <button class="btn ghost sm" id="btnDraftRaw" title="在排版视图与 Markdown 源码之间切换">源码</button>
+        <button class="btn ghost sm" id="btnDraftCopy">复制</button>
+        <button class="btn ghost sm" id="btnDraftDownload" title="下载 Markdown 原文">.md</button>
+        <button class="btn ghost sm" id="btnDraftWord" title="导出可直接编辑的 Word 文档（含关键帧截图）">导出 Word</button>
+        <button class="btn sm" id="btnDraftPDF" title="打印为 PDF（含关键帧截图）">导出 PDF</button>
+        <button class="btn ghost sm" id="btnDraftRetry">重新生成</button>
+      </div>
+    </footer>
+  </div>
+</div>
+
+<!-- ============ 关键帧大图预览 ============ -->
+<div class="modal-mask is-hidden" id="thumbMask">
+  <div class="thumb-viewer" role="dialog" aria-modal="true" aria-label="关键帧预览">
+    <div class="thumb-frame"><img id="thumbImg" alt="关键帧画面" /></div>
+    <div class="thumb-info">
+      <b id="thumbTime">00:00</b>
+      <span id="thumbNote"></span>
+    </div>
+    <div class="thumb-acts">
+      <button class="btn ghost sm" id="btnThumbJump">跳转到此处</button>
+      <button class="btn sm" id="btnThumbClose">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 视频库弹层 ============ -->
+<div class="modal-mask is-hidden" id="libMask">
+  <div class="modal modal-lib" role="dialog" aria-modal="true" aria-labelledby="libTitle">
+    <header class="modal-head">
+      <div class="modal-head-text">
+        <h3 id="libTitle">视频库</h3>
+        <p class="modal-sub" id="libMeta">标注数据按视频分开保存，切换不会互相影响</p>
+      </div>
+      <button class="icon-btn" id="btnLibClose" aria-label="关闭">✕</button>
+    </header>
+
+    <div class="modal-body lib-body">
+      <ul class="lib-list" id="libList"></ul>
+
+      <!-- 添加：支持一次粘贴多行，从保利威后台复制整列 VID 直接贴进来 -->
+      <div class="lib-add">
+        <div class="lib-add-head">
+          <b>添加视频</b>
+          <span>每行一个，可写「名称 VID」，也能只粘 VID</span>
+        </div>
+        <textarea class="input lib-input" id="libInput" rows="2"
+          placeholder="例如：化学滴定 003e81afbb9372cee82d370d135661b1_0"
+          spellcheck="false"></textarea>
+        <div class="lib-add-foot">
+          <span class="lib-hint">VID 在保利威后台 → 点播 → 视频列表里复制，一般以 _0 / _8 结尾</span>
+          <button class="btn sm" id="btnLibAdd">添加</button>
+        </div>
+        <p class="lib-tip">
+          为什么不能自动列出账号下的全部视频？保利威的点播列表接口要用 secretkey 签名，
+          把 secretkey 写进前端等于公开泄露，接口也不允许浏览器跨域直连。<br />
+          LabMark 是纯前端、无后端，所以这里是「本地视频库」——
+          登记过的 VID 存在本机浏览器里，下次打开还在。
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ AI 设置弹层 ============ -->
+<div class="modal-mask is-hidden" id="aiMask">
+  <div class="modal modal-sm" role="dialog" aria-modal="true" aria-labelledby="aiTitle">
+    <header class="modal-head">
+      <div class="modal-head-text">
+        <h3 id="aiTitle">AI 设置</h3>
+        <p class="modal-sub">支持任意 OpenAI 兼容接口，配置只保存在本机浏览器</p>
+      </div>
+      <button class="icon-btn" id="btnAISetClose" aria-label="关闭">✕</button>
+    </header>
+    <div class="modal-body form">
+      <label class="field">
+        <span>服务商 <em>选一个自动填好地址和模型</em></span>
+        <select class="input" id="aiPreset"></select>
+      </label>
+      <p class="form-note" id="aiPresetNote"></p>
+      <label class="field">
+        <span>接口地址 baseUrl</span>
+        <input class="input" id="aiBaseUrl" placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1" autocomplete="off" />
+      </label>
+      <label class="field">
+        <span>API Key</span>
+        <input class="input" id="aiKey" type="password" placeholder="sk-..." autocomplete="off" />
+      </label>
+      <label class="field">
+        <span>文本模型 <em>生成复盘报告</em></span>
+        <input class="input" id="aiModel" placeholder="deepseek-v4.1-flash-1017" autocomplete="off" list="aiModelOptions" />
+      </label>
+      <label class="field">
+        <span>识帧模型 <em>需支持图片输入，留空复用文本模型</em></span>
+        <input class="input" id="aiVisionModel" placeholder="留空则与文本模型相同" autocomplete="off" list="aiModelOptions" />
+      </label>
+      <datalist id="aiModelOptions"></datalist>
+      <p class="form-note">提示：key 写在前端仅适合本地 / 比赛演示。若识帧报「不支持图片」，请改填多模态模型。</p>
+      <p class="form-note ai-test" id="aiTestResult"></p>
+    </div>
+    <footer class="modal-foot">
+      <button class="link" id="btnAIList">可用模型</button>
+      <button class="link" id="btnAIReset">恢复默认</button>
+      <div class="modal-actions">
+        <button class="btn ghost sm" id="btnAITest">测试连接</button>
+        <button class="btn ghost sm" id="btnAISetCancel">取消</button>
+        <button class="btn sm" id="btnAISetSave">保存并测试</button>
+      </div>
+    </footer>
+  </div>
+</div>
+
+<!-- 保利威官方点播播放器 SDK（CDN） -->
+<script src="https://player.polyv.net/resp/vod-player/latest/player.js"></script>
+<!-- 本项目的模块：配置 → 存储 → 播放器适配层 → AI 能力 → 应用逻辑 -->
+<script src="assets/js/config.js"></script>
+<script src="assets/js/library.js"></script>
+<script src="assets/js/store.js"></script>
+<script src="assets/js/player-adapter.js"></script>
+<script src="assets/js/ai.js"></script>
+<script src="assets/js/export.js"></script>
+<script src="assets/js/app.js"></script>
+</body>
+</html>
